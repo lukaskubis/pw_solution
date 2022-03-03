@@ -11,6 +11,8 @@ from datetime import datetime as dt, timedelta as td
 MIN_LAYOVER = td(hours=1)
 MAX_LAYOVER = td(hours=6)
 
+MIN_DEST_TIME = td(hours=1)
+
 
 def parse_cli():
     parser = argparse.ArgumentParser()
@@ -70,30 +72,43 @@ def get_lay_time(fa, fb):
     return _dt(fb['departure']) - _dt(fa['arrival'])
 
 
-def dfs(graph, flights, journeys, visited, args):
-    start = args.origin
+def dfs(graph, flights, journeys, visited, origin, destination, bags):
 
     if flights:
         latest = flights[-1]
-        start = latest['destination']
-        if start == args.destination:
-            j = make_journey(deepcopy(flights), args)
-            journeys.append(j)
+        origin = latest['destination']
+        if origin == destination:
+            journeys.append(deepcopy(flights))
             return
 
-    for f in graph[start]:
-        if f['destination'] in visited or f['bags_allowed'] < args.bags:
+    for f in graph[origin]:
+        if f['destination'] in visited or f['bags_allowed'] < bags:
             continue
 
-        if flights and not (MIN_LAYOVER <= get_lay_time(latest, f) < MAX_LAYOVER):
+        if flights and not (MIN_LAYOVER <= get_lay_time(latest, f) <= MAX_LAYOVER):
             continue
 
         visited.append(f['destination'])
         flights.append(f)
 
-        dfs(graph, flights, journeys, visited, args)
+        dfs(graph, flights, journeys, visited, origin, destination, bags)
         visited.pop()
         flights.pop()
+
+
+def cross_join(there, back):
+    journeys = []
+
+    if not (there and back):
+        return
+
+    for j_there in there:
+        for j_back in back:
+            if get_lay_time(j_there[-1], j_back[0]) <= MIN_DEST_TIME:
+                continue
+
+            journeys.append(j_there + j_back)
+    return journeys
 
 
 def search(graph: dict, args) -> list:
@@ -105,14 +120,24 @@ def search(graph: dict, args) -> list:
     journeys = []
     visited = [args.origin]
 
-    dfs(graph, current, journeys, visited, args)
+    dfs(graph, current, journeys, visited, args.origin, args.destination, args.bags)
 
-    return journeys
+    if args._return:
+        current_back = []
+        journeys_back = []
+        visited_back = [args.destination]
+
+        dfs(graph, current_back, journeys_back, visited_back, args.destination, args.origin, args.bags)
+
+        journeys = cross_join(journeys, journeys_back)
+
+    return journeys or []
 
 
 if __name__ == '__main__':
     args = parse_cli()
     flights = read_csv_file(args.file)
     graph = make_graph(flights)
-    journeys = sorted(search(graph, args), key=lambda x: x['total_price'])
+    journeys = [make_journey(j, args) for j in search(graph, args)]
+    journeys = sorted(journeys, key=lambda x: x['total_price'])
     print(json.dumps(journeys, indent=2))
