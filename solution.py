@@ -11,7 +11,8 @@ from datetime import datetime as dt, timedelta as td
 MIN_LAYOVER = td(hours=1)
 MAX_LAYOVER = td(hours=6)
 
-MIN_DEST_TIME = td(hours=1)
+# spend at least a day
+MIN_DEST_TIME = td(days=1)
 
 
 def parse_cli():
